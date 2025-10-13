@@ -12,8 +12,7 @@ It works by maintaining simple manifest files and prefetching Snap packages and 
 * **Offline prefetch** of `.snap` and `.assert` files for fast first boot
 * **Automatic first‑boot processing** via systemd
 * **Safe in chroot** (doesn’t start snapd until the system is live)
-* **Manifest‑based** — simple text lists under `/etc/snapstage/`
-* **Fully generic** — no distro branding, no external dependencies beyond bash and snapd
+* **Manifest‑based** simple text lists under `/etc/snapstage/`
 
 ## Usage
 
