@@ -82,7 +82,7 @@ sudo apt install ./snapstage_1.0.deb
 
 ---
 
-Host vs Chroot workflows
+## **Host vs Chroot workflows**
 
 **Option A — Full chroot-only (no snap available)**
 
