@@ -1,0 +1,4 @@
+#!/bin/bash
+set -e
+systemctl disable snapstage-firstboot.service || true
+exit 0

@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONF_DIR="/etc/snapstage"
+MANIFEST_INSTALL="$CONF_DIR/install.txt"
+MANIFEST_REMOVE="$CONF_DIR/remove.txt"
+CACHE="/var/local/snapstage"
+SNAPDIR="$CACHE/snaps"
+ASSERTDIR="$CACHE/assertions"
+
+usage() {
+  cat <<USAGE
+snapstagectl — queue snaps for first-boot install/remove, and prefetch for offline installs.
+
+Usage:
+  snapstagectl add <snap> [channel]        # queue install (default channel=stable) + prefetch
+  snapstagectl remove <snap>               # queue removal on first boot
+  snapstagectl unqueue <snap>              # remove from install queue
+  snapstagectl list                        # show queues and cache
+  snapstagectl prefetch [<snap> [channel]] # prefetch one snap (or all from install queue)
+  snapstagectl clear-cache                 # delete cached .snap/.assert files
+  snapstagectl help
+
+Env:
+  PREFETCH=true|false   # default true for 'add'
+USAGE
+}
+
+ensure_layout() {
+  install -d -m 0755 "$CONF_DIR" "$SNAPDIR" "$ASSERTDIR"
+  touch "$MANIFEST_INSTALL" "$MANIFEST_REMOVE"
+}
+
+snap_exists() {
+  # Uses host 'snap' to validate the package exists in the store
+  # Returns 0 if exists, 1 if not, 2 if snap tool missing.
+  if ! command -v snap >/dev/null 2>&1; then
+    return 2
+  fi
+  if snap info "$1" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+prefetch_one() {
+  local name="$1" channel="${2:-stable}"
+  if ! command -v snap >/dev/null 2>&1; then
+    echo "[snapstagectl] 'snap' command not available on this host; cannot prefetch." >&2
+    return 1
+  fi
+  echo "[snapstagectl] prefetching $name (channel=$channel)..."
+  pushd "$CACHE" >/dev/null
+  # snap download writes files into current dir
+  if ! snap download --channel="$channel" "$name"; then
+    echo "[snapstagectl] prefetch failed for $name. It may not exist on this host/channel." >&2
+    popd >/dev/null
+    return 1
+  fi
+  mv -f ./*.snap "$SNAPDIR"/ 2>/dev/null || true
+  mv -f ./*.assert "$ASSERTDIR"/ 2>/dev/null || true
+  popd >/dev/null
+}
+
+cmd="${1:-help}"
+case "$cmd" in
+  help|-h|--help) usage; exit 0 ;;
+esac
+
+ensure_layout
+
+case "$cmd" in
+  add)
+    name="${2:-}"; channel="${3:-stable}"
+    [[ -n "$name" ]] || { echo "ERR: missing snap name"; usage; exit 1; }
+
+    # Check existence if possible
+    if snap_exists "$name"; then
+      echo "[snapstagectl] confirmed snap exists: $name"
+    else
+      rc=$?
+      if [[ $rc -eq 1 ]]; then
+        echo "[snapstagectl] WARNING: snap '$name' not found via 'snap info'. Check spelling/channel." >&2
+      elif [[ $rc -eq 2 ]]; then
+        echo "[snapstagectl] NOTE: 'snap' not available; cannot validate '$name' now." >&2
+      fi
+    fi
+
+    # idempotent append to install queue
+    grep -Eq "^${name}(=|$)" "$MANIFEST_INSTALL" || echo "${name}=${channel}" >> "$MANIFEST_INSTALL"
+    echo "[snapstagectl] queued install: $name ($channel)"
+
+    # prefetch by default
+    : "${PREFETCH:=true}"
+    if [[ "$PREFETCH" == "true" ]]; then
+      prefetch_one "$name" "$channel" || true
+    fi
+    ;;
+
+  remove)
+    name="${2:-}"
+    [[ -n "$name" ]] || { echo "ERR: missing snap name"; usage; exit 1; }
+    grep -Eq "^${name}$" "$MANIFEST_REMOVE" || echo "$name" >> "$MANIFEST_REMOVE"
+    echo "[snapstagectl] queued removal: $name"
+    ;;
+
+  unqueue)
+    name="${2:-}"
+    [[ -n "$name" ]] || { echo "ERR: missing snap name"; usage; exit 1; }
+    # remove any line starting with name= or name end of line
+    tmp="$(mktemp)"
+    awk -v n="$name" -F= '!( $1==n )' "$MANIFEST_INSTALL" > "$tmp" && mv "$tmp" "$MANIFEST_INSTALL"
+    echo "[snapstagectl] removed from install queue: $name"
+    ;;
+
+  list)
+    echo "== Install queue =="
+    sed -e '/^$/d' -e '/^#/d' "$MANIFEST_INSTALL" || true
+    echo
+    echo "== Remove queue =="
+    sed -e '/^$/d' -e '/^#/d' "$MANIFEST_REMOVE" || true
+    echo
+    echo "== Cached snaps =="
+    ls -1 "$SNAPDIR" 2>/dev/null || true
+    echo
+    echo "== Cached assertions =="
+    ls -1 "$ASSERTDIR" 2>/dev/null || true
+    ;;
+
+  prefetch)
+    if [[ -n "${2:-}" ]]; then
+      # prefetch specific snap [channel]
+      prefetch_one "$2" "${3:-stable}"
+    else
+      # prefetch all from install queue
+      while IFS= read -r line; do
+        [[ -z "$line" || "$line" =~ ^# ]] && continue
+        n="${line%%=*}"
+        ch="${line#*=}"; [[ "$ch" == "$line" ]] && ch="stable"
+        prefetch_one "$n" "$ch" || true
+      done < "$MANIFEST_INSTALL"
+    fi
+    ;;
+
+  clear-cache)
+    rm -f "$SNAPDIR"/*.snap 2>/dev/null || true
+    rm -f "$ASSERTDIR"/*.assert 2>/dev/null || true
+    echo "[snapstagectl] cache cleared."
+    ;;
+
+  *)
+    echo "ERR: unknown command '$cmd'"; usage; exit 1 ;;
+esac

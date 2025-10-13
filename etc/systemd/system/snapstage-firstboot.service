@@ -1,0 +1,14 @@
+[Unit]
+Description=Snap first-boot installer/remover (offline-preferred)
+After=network-online.target snapd.service snapd.apparmor.service
+Wants=network-online.target
+
+ConditionPathExists=/etc/snapstage/install.txt
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/snapstage-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

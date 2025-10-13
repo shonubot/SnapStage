@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONF_DIR="/etc/snapstage"
+MANIFEST_INSTALL="$CONF_DIR/install.txt"
+MANIFEST_REMOVE="$CONF_DIR/remove.txt"
+CACHE="/var/local/snapstage"
+SNAPDIR="$CACHE/snaps"
+ASSERTDIR="$CACHE/assertions"
+STATE_FLAG="/var/lib/snapstage/.done"
+
+log(){ echo "[snapstage-firstboot] $*"; }
+
+[[ -e "$STATE_FLAG" ]] && { log "already completed; exiting."; exit 0; }
+
+log "waiting for snapd..."
+until systemctl is-active --quiet snapd.service; do sleep 1; done
+
+if command -v snap >/dev/null 2>&1; then
+  snap wait system seed.loaded >/dev/null 2>&1 || true
+fi
+
+ack_assertions() {
+  if compgen -G "$ASSERTDIR/*.assert" >/dev/null; then
+    for a in "$ASSERTDIR"/*.assert; do
+      log "ack $(basename "$a")"
+      snap ack "$a" || true
+    done
+  fi
+}
+
+offline_install() {
+  local name="$1"
+  local file
+  file="$(ls "$SNAPDIR"/"${name}"_*.snap 2>/dev/null | head -n1 || true)"
+  if [[ -n "$file" ]]; then
+    log "offline install: $name from $(basename "$file")"
+    snap install --dangerous --no-wait "$file" || return 1
+    return 0
+  fi
+  return 1
+}
+
+online_install() {
+  local name="$1" channel="$2"
+  log "online install: $name (channel=$channel)"
+  snap install --no-wait --channel="$channel" "$name"
+}
+
+maybe_remove() {
+  local name="$1"
+  if snap list | awk "NR>1 {print \$1}" | grep -qx "$name"; then
+    log "removing installed snap: $name"
+    snap remove --purge "$name" || snap remove "$name" || true
+  else
+    log "skip remove (not installed): $name"
+  fi
+}
+
+# 1) Removals first (avoid conflicts)
+if [[ -s "$MANIFEST_REMOVE" ]]; then
+  while IFS= read -r name; do
+    [[ -z "$name" || "$name" =~ ^# ]] && continue
+    maybe_remove "$name"
+  done < "$MANIFEST_REMOVE"
+fi
+
+# 2) Install queued snaps (prefer offline)
+ack_assertions
+if [[ -s "$MANIFEST_INSTALL" ]]; then
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+    name="${line%%=*}"
+    channel="${line#*=}"; [[ "$channel" == "$line" ]] && channel="stable"
+    if ! offline_install "$name"; then
+      online_install "$name" "$channel"
+    fi
+  done < "$MANIFEST_INSTALL"
+else
+  log "no install queue."
+fi
+
+# Wait for any in-progress changes to finish
+if command -v snap >/dev/null 2>&1; then
+  log "waiting for snap changes to settle..."
+  # watch all Doing|Pending changes
+  ids="$(snap changes --abs-time | awk "/Doing|Pending/{print \$1}")"
+  if [[ -n "$ids" ]]; then
+    for id in $ids; do snap watch "$id" || true; done
+  fi
+fi
+
+# Refresh desktop DB/icons (best-effort)
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database >/dev/null 2>&1 || true
+command -v gtk-update-icon-cache >/dev/null 2>&1 && \
+  find /usr/share/icons -maxdepth 1 -type d -exec sh -c "gtk-update-icon-cache -q \"{}/\"" \; 2>/dev/null || true
+
+touch "$STATE_FLAG"
+log "done."

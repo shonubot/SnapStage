@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+systemctl daemon-reload || true
+systemctl enable snapstage-firstboot.service || true
+exit 0
