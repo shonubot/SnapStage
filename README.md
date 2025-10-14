@@ -1,6 +1,6 @@
-<img src="https://github.com/user-attachments/assets/dc68a0d7-1d73-4c06-843e-0bba789212f2" alt="SnapStage Icon" width="190" hieght="94">
-
-# SnapStage
+<h1 align="left">
+  <img src="/icon.svg" alt="SnapStage Icon" height="52"> <sup>SnapStage</sup>
+</h1>
 
 SnapStage is a small, distro‑agnostic utility that lets you queue Snap installs or removals during ISO customization (e.g. inside a chroot) and automatically complete them on the first boot of the system.
 
