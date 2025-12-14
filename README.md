@@ -45,9 +45,9 @@ snapstagectl prefetch firefox
 ### Manage queues
 
 ```bash
-snapstagectl list        # Show current queues and cache
+snapstagectl list        # List
 snapstagectl unqueue foo # Remove 'foo' from install list
-snapstagectl clear-cache # Delete cached files
+snapstagectl clear-cache # Delete cache files
 ```
 
 ### On first boot
@@ -86,7 +86,7 @@ sudo apt install ./snapstage_1.0.deb
 
 ## **Host vs Chroot workflows**
 
-**Option A — Full chroot-only (no snap available)**
+**Option A: Full chroot-only (no snap available)**
 
 Queue snaps in the chroot:
 ```bash
@@ -99,7 +99,7 @@ Do not prefetch (it will be skipped automatically).
 
 On first boot, the service installs from the network.
 
-**Option B — Fast offline installs (recommended)**
+**Option B: Fast offline installs (recommended)**
 
 On a host/VM where snap is available, stage a cache:
 ```bash
