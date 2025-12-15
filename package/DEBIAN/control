@@ -3,7 +3,7 @@ Version: 1.0
 Section: admin
 Priority: optional
 Architecture: all
-Maintainer: Kavish Advani <92854541+shonubot@users.noreply.github.com>
+Maintainer: Kavish Advani <kavish@niieux.com>
 Description: Universal Snap prefetch + first-boot installer utility
  Provides a safe way to queue Snap installs/removals during ISO customization
- (like Cubic) and complete them automatically on first boot with offline support.
+ and complete them automatically on first boot with offline support.
